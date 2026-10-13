@@ -1,10 +1,17 @@
 #!/bin/bash
-# Created by Cferg.
-# Script is meant to automate backups, and upgrading my mini PC running proxmox while sending reports to ntfy subscription.
-# October 12th, 2026.
+# Created by Curtis Ferguson.
+# Script is meant to automate backups, and upgrading my sole mini PC running proxmox and a few docker containers.
 
-ntfyURL="NTFY_URL_GOES_HERE"
+
+ntfyURL="NTFY_URL"
 SUMMARY=""
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+LOG="/var/log/pvemaint/pve-maint.log"
+exec > >(tee -a "$LOG") 2>&1
+echo
+echo -e "${BLUE}===== $(date '+%F %T') start =====${NC}"
 
 notify() {
 
@@ -21,7 +28,7 @@ if mountpoint -q /mnt/usb-backup; then
     echo "USB Device: mounted"
     SUMMARY+="USB Device: Mounted"$'\n'
 
-else 
+else
 
     echo "USB Device: Not Mounted"
     SUMMARY+="USB Device: Not Mounted"$'\n'
@@ -31,13 +38,8 @@ else
 
 fi
 
-# Storage Amount Used
-mntused=$(df -h /mnt/usb-backup --output=pcent | tail -n 1)
-echo "USB Device Used: $mntused"
-SUMMARY+="Storage Used: $mntused"$'\n'
-
 #run backup onto usb device
-if vzdump 100 --storage usb-backup --compress zstd --prune-backups keep-last=2; then
+if vzdump --all --storage usb-backup --compress zstd --prune-backups keep-last=2; then
 
     echo "Backup: Successful"
     SUMMARY+="Backup: Successful"$'\n'
@@ -51,6 +53,16 @@ else
     exit 1
 
 fi
+
+# Size of backup
+backsize=$(du -sh /mnt/usb-backup/dump | cut -f1)
+echo "Backup Size: $backsize"
+SUMMARY+="Backup Size: $backsize"$'\n'
+
+# Storage Amout Used
+mntused=$(df -h /mnt/usb-backup --output=pcent | tail -n 1)
+echo "USB Device Used: $mntused"
+SUMMARY+="Storage Used: $mntused"$'\n'
 
 # Updating proxmox server
 if apt-get update; then
@@ -98,11 +110,11 @@ uptime_sec=$(cut -d. -f1 /proc/uptime)
 uptime_days=$(( uptime_sec / 86400 ))
 
 if [[ "$curkern" != "$waiting_kern" ]]; then
-    
+
    echo "New Kernel Waiting"
    reason="New Kernel"
 
-elif [[ "$uptime_days" -ge 0 ]]; then
+elif [[ "$uptime_days" -ge 30 ]]; then
 
    echo "Uptime too large"
    reason="Uptime over 30 days"
@@ -111,7 +123,7 @@ else
 
   reason=""
 
-fi 
+fi
 
 # Send summary and reboot if needed
 if [[ -n "$reason" ]]; then
